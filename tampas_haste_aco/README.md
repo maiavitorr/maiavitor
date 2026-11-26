@@ -47,6 +47,11 @@ na produção volta a 23,4. Corpo de 9 mm + flange de 1,5 mm, como no projeto an
 | 7 | 21,25 | 19,60 | | | | | |
 | 8 | 21,35 | 19,70 | | | | | |
 
+## Quantidades (informadas em 26/11/2026)
+- 24 tampas (6 hastes × 2 pontas × 2 móveis) e 24 buchas (2 móveis → 12 por móvel).
+- Layout das placas de produção: a definir depois do teste (bucha com flange 23,4 cabe em 3 × 8 numa placa só;
+  tampa com flange Ø 34 → 6 por placa como no projeto antigo, ou mais por placa se preferir).
+
 ## Como testar
 1. Abrir `TAMPAS_BUCHAS_HASTE_ACO_teste_v2.3mf` no Bambu Studio e imprimir com o **mesmo filamento** do lote final
    (o projeto vem com o filamento 1 do projeto do dachshund — troque pelo seu).
