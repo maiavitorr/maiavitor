@@ -1,59 +1,71 @@
-# Tampas das hastes de aço — suporte de filamento
+# Tampas e buchas das hastes de aço — placa de TESTE v2
 
-Data de referência: 26/11/2026 · Versão: teste v1 · Impressora: Bambu Lab A1 (bico 0,4 mm)
+Data de referência: 26/11/2026 · Impressora no projeto: Bambu Lab A1 0,4 mm (perfil copiado do projeto do dachshund)
+Cada peça tem **só um número gravado**; a tabela número → medida está abaixo.
 
-## Objetivo
-24 tampas (6 hastes × 2 pontas × 2 suportes) que entram na haste de aço. A primeira
-versão não encaixou direito; esta placa testa 10 diâmetros de pino parecidos para achar o ajuste.
+## O que aconteceu (projeto antigo × fotos)
+| Item | Projeto antigo | Real (paquímetro) | Efeito |
+|---|---|---|---|
+| Haste, Ø externo | 18,08 | **19,10** (foto 2) | bucha com furo Ø 18,40 não deixa a haste entrar (−0,70 mm) |
+| Haste, Ø interno | 14,45 | **16,26** (foto 3) | pino Ø 14,20 fica solto: folga de 1,03 mm por lado no modelo |
+| Pino da tampa impresso | 14,20 (modelo) | 13,68 (foto 4) | impressão 0,52 mm menor que o modelo |
+| Anel impresso (corpo da bucha) | 20,75 (modelo) | 20,45 (foto 1) | impressão 0,30 mm menor que o modelo |
+| Furo do rack | 21,05 (nome do arquivo; modelo do rack = 21,32) | não aparece nas fotos | **confirmar com o paquímetro** |
 
-## Medidas (paquímetro digital, lidas das fotos de 26/11/2026)
-| Peça | Medida | Observação |
-|---|---|---|
-| Haste de aço — Ø externo | 19,10 mm | foto 2 |
-| Haste de aço — Ø interno | **16,26 mm** | foto 3 (referência do ajuste); parede ≈ 1,42 mm |
-| Tampa antiga — Ø do pino | 13,68 mm | foto 4 (≈ 2,6 mm menor que o furo da haste) |
-| Anel impresso | 20,45 mm | foto 1 — função não confirmada, **não usado no modelo** |
+Ø 19,10 é compatível com tubo de ¾" (19,05); o rack original é para conduíte EMT ½" (≈ 17,9). Com as duas medidas
+de impressão subdimensionada (−0,3 e −0,5), a faixa da placa cobre de 0 a −0,6 mm.
 
-## Geometria da tampa (parametrizada em `gerar_tampas.py`)
-- Flange Ø 22,0 × 2,0 mm (cobre o topo da haste Ø 19,10), chanfro 0,4 na base (pé de elefante) e 0,3 na borda.
-- Pino de 10 mm com chanfro de 0,8 × 45° na ponta (guia de entrada).
-- Imprime **com o flange na mesa e o pino para cima**, sem suporte.
-- Rótulo do Ø gravado (0,4 mm) na ponta do pino e na face externa do flange.
+## TAMPAS — número → Ø do pino (modelo)
+Folga nominal = 16,26 − Ø. Flange Ø 34 × 3,1 e pino de 20,5 mm iguais ao projeto antigo; só o Ø do pino muda.
 
-## Placa de teste v1 — `TAMPA_HASTE_ACO_teste_v1.3mf`
-Folga nominal = 16,26 − Ø do pino (negativa = interferência). Fileira de trás: 15,95 → 16,15; fileira da frente: 16,20 → 16,40.
-
-| # | Ø pino (mm) | Folga nominal (mm) | Entra? | Aperto (solta / justa / dura) | Segura? | Observações |
+| nº | Ø pino | Folga nominal | Ø impresso medido | Entra? | Aperto (solta / justa / dura) | Segura? |
 |---|---|---|---|---|---|---|
-| 1 | 15,95 | +0,31 | | | | |
-| 2 | 16,00 | +0,26 | | | | |
-| 3 | 16,05 | +0,21 | | | | |
-| 4 | 16,10 | +0,16 | | | | |
-| 5 | 16,15 | +0,11 | | | | |
-| 6 | 16,20 | +0,06 | | | | |
-| 7 | 16,25 | +0,01 | | | | |
-| 8 | 16,30 | −0,04 | | | | |
-| 9 | 16,35 | −0,09 | | | | |
-| 10 | 16,40 | −0,14 | | | | |
+| 1 | 16,00 | +0,26 | | | | |
+| 2 | 16,10 | +0,16 | | | | |
+| 3 | 16,20 | +0,06 | | | | |
+| 4 | 16,30 | −0,04 | | | | |
+| 5 | 16,40 | −0,14 | | | | |
+| 6 | 16,50 | −0,24 | | | | |
+| 7 | 16,60 | −0,34 | | | | |
+| 8 | 16,70 | −0,44 | | | | |
+| 9 | 16,80 | −0,54 | | | | |
+| 10 | 16,90 | −0,64 | | | | |
 
-**Resultado do teste:** _(preencher: Ø escolhido e data)_
+## BUCHAS — número → Ø externo do corpo / Ø do furo (modelo)
+Os dois diâmetros sobem juntos (parede fixa de 0,825 mm), então cada peça testa o corpo no furo do rack **e** o furo na
+haste; escolha o corpo de uma peça e o furo de outra, se for o caso. Flange de teste Ø 32 (só para caber o número);
+na produção volta a 23,4. Corpo de 9 mm + flange de 1,5 mm, como no projeto antigo.
 
-## Sugestão de impressão (ajustar ao seu perfil)
-PETG, camada 0,20 mm, 3 paredes, preenchimento ~15 %, sem suporte, sem brim. Costura (seam) alinhada
-ou scarf para não criar calombo no pino. Peças pequenas e distantes — o fatiador mostra o tempo real.
+| nº | Ø corpo | Ø furo | Corpo impresso | Furo impresso | Entra no rack? | Haste passa? | Obs. |
+|---|---|---|---|---|---|---|---|
+| 1 | 20,65 | 19,00 | | | | | |
+| 2 | 20,75 | 19,10 | | | | | |
+| 3 | 20,85 | 19,20 | | | | | |
+| 4 | 20,95 | 19,30 | | | | | |
+| 5 | 21,05 | 19,40 | | | | | |
+| 6 | 21,15 | 19,50 | | | | | |
+| 7 | 21,25 | 19,60 | | | | | |
+| 8 | 21,35 | 19,70 | | | | | |
 
-## Próximo passo — lote de 24
-Depois de escolher o Ø:
+## Como testar
+1. Abrir `TAMPAS_BUCHAS_HASTE_ACO_teste_v2.3mf` no Bambu Studio e imprimir com o **mesmo filamento** do lote final
+   (o projeto vem com o filamento 1 do projeto do dachshund — troque pelo seu).
+2. Medir cada peça impressa com o paquímetro (colunas "impresso") — isso mostra quanto a impressora desvia do modelo.
+3. Tampas na haste; buchas no furo do rack e depois a haste dentro da bucha. Anotar na tabela.
+4. Passar os números escolhidos (tampa e bucha) e as quantidades; as placas de produção saem desses números.
 
-```bash
-python3 gerar_tampas.py --tamanhos 16.15 --copias 24 --colunas 6 --sem-texto \
-        --nome TAMPA_HASTE_ACO_producao_v1
-```
-(troque `16.15` pelo Ø vencedor). Se nenhum ficar bom, informe o que sentiu (tudo solto / tudo duro)
-que eu desloco a faixa de tamanhos — ou mudo o desenho (nervuras de crush, pino mais curto etc.).
+## Premissas e pontos a confirmar
+- Impressora A1 e perfil do projeto do dachshund (3 paredes, 0,20 mm). Por objeto: sem suporte, sem brim, sem ironing.
+- Furo real do rack = 21,05 vem do nome do arquivo antigo, não das fotos.
+- Chanfros novos na bucha: 0,5 mm na entrada da haste e 0,3 × 0,6 mm na ponta do corpo.
+- A parede de 0,825 mm da bucha fatia em duas linhas de ~0,43 mm (conferido no PrusaSlicer).
+- Não foi aberto no Bambu Studio: estrutura copiada dos seus 3MF e geometria fatiada no PrusaSlicer
+  (~55 g no total: tampas ≈ 42 g, buchas ≈ 13 g). Tempo real: ver no Studio.
+- Se o `.3mf` não abrir, usar o `_placa.stl`.
 
 ## Arquivos
-- `TAMPA_HASTE_ACO_teste_v1.3mf` — 10 objetos nomeados (`TAMPA_D16.10` …) já posicionados na mesa 256 × 256
-- `TAMPA_HASTE_ACO_teste_v1.stl` — mesma placa em um único STL (alternativa)
-- `TAMPA_HASTE_ACO_teste_v1_preview.png` — conferência visual
-- `gerar_tampas.py` — gerador paramétrico (numpy, scipy, networkx, shapely, trimesh, manifold3d, matplotlib)
+- `TAMPAS_BUCHAS_HASTE_ACO_teste_v2.3mf` — projeto completo, 1 placa, 18 objetos nomeados (`TAMPA_01_P16.00`, `BUCHA_1_OD20.65_F19.00`…)
+- `TAMPAS_BUCHAS_HASTE_ACO_teste_v2_placa.stl` — mesma placa em um único STL
+- `TAMPAS_BUCHAS_HASTE_ACO_teste_v2_preview.png` / `_3d.png` — conferência visual
+- `gerar_projeto.py` (gerador) · `verificar_projeto.py` (confere o .3mf: malhas, diâmetros, números gravados)
+- `projeto_original/` — tampas e buchas antigas · `v1_obsoleto/` — primeira tentativa (já substituída)
