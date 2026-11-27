@@ -49,10 +49,22 @@ na produção volta a 23,4. Corpo de 9 mm + flange de 1,5 mm, como no projeto an
 
 ## Quantidades (informadas em 26/11/2026)
 - 24 tampas (6 hastes × 2 pontas × 2 móveis) e 24 buchas (2 móveis → 12 por móvel).
-- Layout das placas de produção: a definir depois do teste (bucha com flange 23,4 cabe em 3 × 8 numa placa só;
-  tampa com flange Ø 34 → 6 por placa como no projeto antigo, ou mais por placa se preferir).
+- Produção: placa 1 = 24 buchas (3 × 8); placas 2 a 5 = 6 tampas cada (como no projeto antigo).
 
-## Como testar
+## Resultado do teste (27/11/2026)
+- **Bucha nº 6** (corpo 21,15 / furo 19,50) e **tampa nº 7** (pino 16,60): encaixe perfeito em 12 furos/pontas.
+- Nas outras 12 pontas da haste há uma **aba de metal do corte de fábrica dobrada para dentro** (~2–3 mm, estimativa
+  pelas fotos); nenhum pino passa por ela, independente do tamanho.
+- A medir (peças impressas, paquímetro): Ø do pino da tampa 7 e Ø do furo da bucha 6 — mostra o desvio real da impressora.
+
+## Pontas com aba: solução
+1. **Rebarbar a ponta (recomendado, não precisa reimprimir):** afastar/arrancar a aba com alicate de bico fino ou chave de
+   fenda, nivelar com lima redonda (meia-cana) ou escareador cônico 90° e quebrar a aresta interna ~0,5 mm; limpar a limalha;
+   testar a tampa 7 (deve entrar sem forçar). Luvas e óculos — a aba corta.
+2. **Plano B (se não for viável rebarbar):** tampa externa (luva) que cobre a ponta por fora, com o mesmo furo Ø 19,50 da
+   bucha nº 6 — não depende do interior da haste. Exige novo modelo e um teste curto.
+
+## Como testar (placa de teste)
 1. Abrir `TAMPAS_BUCHAS_HASTE_ACO_teste_v2.3mf` no Bambu Studio e imprimir com o **mesmo filamento** do lote final
    (o projeto vem com o filamento 1 do projeto do dachshund — troque pelo seu).
 2. Medir cada peça impressa com o paquímetro (colunas "impresso") — isso mostra quanto a impressora desvia do modelo.
@@ -70,6 +82,10 @@ na produção volta a 23,4. Corpo de 9 mm + flange de 1,5 mm, como no projeto an
 
 ## Arquivos
 - `TAMPAS_BUCHAS_HASTE_ACO_teste_v2.3mf` — projeto completo, 1 placa, 18 objetos nomeados (`TAMPA_01_P16.00`, `BUCHA_1_OD20.65_F19.00`…)
+- `TAMPAS_BUCHAS_HASTE_ACO_producao_v1.3mf` — **produção**: tampa nº 7 × 24 + bucha nº 6 × 24, 5 placas, sem números
+  (`python3 gerar_projeto.py --producao --tampa 7 --bucha 6`). ≈ 124 g no total (PrusaSlicer, 3 paredes, 5 % de preenchimento).
+  Posições das placas 2–5 seguem o que se sabe do formato do Bambu Studio (não testado no Studio): se as peças
+  aparecerem fora da placa, usar "Arrange all" (A) ou abrir placa por placa.
 - `TAMPAS_BUCHAS_HASTE_ACO_teste_v2_placa.stl` — mesma placa em um único STL
 - `TAMPAS_BUCHAS_HASTE_ACO_teste_v2_preview.png` / `_3d.png` — conferência visual
 - `gerar_projeto.py` (gerador) · `verificar_projeto.py` (confere o .3mf: malhas, diâmetros, números gravados)

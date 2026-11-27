@@ -49,6 +49,85 @@ def diam_corte(m, z, interno=None):
     return res
 
 
+def origem(k, n):
+    """Origem da placa k (0-based) com n placas — regra do Bambu Studio (premissa: o 3MF guarda posições globais)."""
+    v = n ** 0.5
+    r = int(v + 0.5)
+    cols = r + 1 if v > r else r
+    return (k % cols) * 256 * 1.2, -(k // cols) * 256 * 1.2
+
+
+def main_producao(z, nomes, topo, itens, nome_cfg, cfg):
+    placas = cfg.findall("plate")
+    n = len(placas)
+    desc = re.search(r'name="Description">([^<]*)<', z.read("3D/3dmodel.model").decode()).group(1)
+    pino = float(re.search(r"pino ([\d.]+)\)", desc).group(1))
+    od, furo = map(float, re.search(r"corpo ([\d.]+) / furo ([\d.]+)", desc).groups())
+    print(f"\n== PRODUÇÃO · {len(topo)} objetos · {n} placas · declarado no arquivo: pino {pino:.2f} · corpo {od:.2f} · furo {furo:.2f}")
+    placa_de = {}
+    for k, pl in enumerate(placas):
+        for mi in pl.findall("model_instance"):
+            placa_de[mi.find("metadata[@key='object_id']").get("value")] = k
+    check(len(topo) == len(itens) == len(nome_cfg) == len(placa_de), "contagens iguais (3dmodel, build, model_settings, placas)")
+    check(set(nome_cfg) == set(placa_de) == {o.get("id") for o in topo}, "ids consistentes entre os arquivos e atribuídos a uma placa")
+
+    pecas = {}
+    for o in topo:
+        oid = o.get("id")
+        comp = o.find("m:components/m:component", NS)
+        cam = comp.get("{%s}path" % NS["p"]).lstrip("/")
+        assert cam in nomes, cam
+        inner, m = malha(ET.fromstring(z.read(cam)))
+        assert inner == comp.get("objectid")
+        m.apply_translation(np.array(itens[oid].get("transform").split(), float)[9:12])
+        ox, oy = origem(placa_de[oid], n)
+        m.apply_translation((-ox, -oy, 0))                    # coordenadas relativas à placa
+        pecas[oid] = (nome_cfg[oid], placa_de[oid], m)
+    check(all(m.is_watertight and m.is_winding_consistent and m.volume > 0 for _, _, m in pecas.values()),
+          "todas as malhas fechadas, orientação consistente, volume > 0")
+    check(all(abs(m.bounds[0][2]) < 1e-4 for _, _, m in pecas.values()), "todas as peças apoiadas em z = 0")
+
+    nt = sum(nm.startswith("TAMPA_T") for nm, _, _ in pecas.values())
+    nb = sum(nm.startswith("BUCHA_B") for nm, _, _ in pecas.values())
+    print(f"  --   {nt} tampas e {nb} buchas no projeto")
+    for k in range(n):
+        grupo = [(nm, m) for nm, kk, m in pecas.values() if kk == k]
+        b = np.array([m.bounds for _, m in grupo])
+        c = np.array([((m.bounds[0] + m.bounds[1]) / 2)[:2] for _, m in grupo]); r = np.array([max(m.extents[:2]) / 2 for _, m in grupo])
+        folga = min([np.linalg.norm(c[i] - c[j]) - r[i] - r[j] for i in range(len(c)) for j in range(i + 1, len(c))] or [99])
+        tipo = "buchas" if grupo[0][0].startswith("BUCHA") else "tampas"
+        check(b[:, 0, :2].min() >= 5 and b[:, 1, :2].max() <= 251 and folga >= 2.0,
+              f"placa {k + 1}: {len(grupo):>2} {tipo} · X {b[:,0,0].min():.1f}…{b[:,1,0].max():.1f} · Y {b[:,0,1].min():.1f}…{b[:,1,1].max():.1f} "
+              f"(mesa 0–256) · menor distância {folga:.1f} mm")
+        check(len({g[0][:6] for g in grupo}) == 1, f"placa {k + 1}: só um tipo de peça")
+
+    print("\n== medidas NA MALHA contra o declarado, e ausência de texto gravado (todas as peças; imprime a primeira e a última de cada tipo)")
+    todas_ok = True
+    for oid, (nm, k, m) in pecas.items():
+        c = (m.bounds[0] + m.bounds[1]) / 2
+        m0 = m.copy(); m0.apply_translation((-c[0], -c[1], 0))
+        if nm.startswith("TAMPA"):
+            (de, _), = [r for r in diam_corte(m0, 12.0) if r[0] > 5]
+            fl = diam_corte(m0, 2.5)[0][0]
+            lisas = [len(m0.section(plane_origin=[0, 0, zz], plane_normal=[0, 0, 1]).discrete) for zz in (2.9, 25.4, 0.2)]
+            ok_ = abs(de - pino) < 0.005 and abs(fl - 34.0) < 0.05 and abs(m.extents[2] - 25.6) < 0.01 and lisas == [1, 1, 1]
+            linha = f"{nm:<14} pino Ø {de:.3f} ({pino:.2f}) · flange Ø {fl:.2f} (34,00) · h {m.extents[2]:.2f} (25,60) · sem texto={lisas == [1, 1, 1]}"
+        else:
+            (de, fo), = diam_corte(m0, 6.0)
+            fl = max(diam_corte(m0, 0.75), key=lambda r: r[0])[0]
+            lisas = len(m0.section(plane_origin=[0, 0, 1.3], plane_normal=[0, 0, 1]).discrete)
+            ok_ = abs(de - od) < 0.005 and abs(fo[0] - furo) < 0.005 and abs(fl - 23.4) < 0.05 and abs(m.extents[2] - 10.5) < 0.01 and lisas == 2
+            linha = f"{nm:<14} corpo Ø {de:.3f} ({od:.2f}) · furo Ø {fo[0]:.3f} ({furo:.2f}) · flange Ø {fl:.2f} (23,40) · h {m.extents[2]:.2f} (10,50) · sem texto={lisas == 2}"
+        todas_ok &= ok_
+        if not ok_ or nm.endswith(("_01", "_24")):
+            check(ok_, linha)
+    check(todas_ok, f"as {len(pecas)} peças passaram nas medidas acima")
+    vol = sum(m.volume for _, _, m in pecas.values())
+    print(f"\nVolume sólido total: {vol/1000:.1f} cm³ (limite superior)")
+    print("\nRESULTADO:", "TUDO OK" if ok else "HÁ FALHAS")
+    return 0 if ok else 1
+
+
 def main(caminho):
     z = zipfile.ZipFile(caminho)
     nomes = set(z.namelist())
@@ -70,6 +149,8 @@ def main(caminho):
     cfg = ET.fromstring(z.read("Metadata/model_settings.config"))
     nome_cfg = {o.get("id"): next(md.get("value") for md in o.findall("metadata") if md.get("key") == "name")
                 for o in cfg.findall("object")}
+    if any(n.startswith("TAMPA_T") for n in nome_cfg.values()):
+        return main_producao(z, nomes, topo, itens, nome_cfg, cfg)
     na_placa = {mi.find("metadata[@key='object_id']").get("value") for mi in cfg.find("plate").findall("model_instance")}
     print(f"\n== {len(topo)} objetos no 3dmodel.model · {len(itens)} itens de build · {len(nome_cfg)} no model_settings · {len(na_placa)} na placa 1")
     check(len(topo) == len(itens) == len(nome_cfg) == len(na_placa), "contagens iguais")

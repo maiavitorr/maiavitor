@@ -9,6 +9,8 @@ e monta uma placa de TESTE com vários tamanhos parecidos, cada peça identific�
             furo real do rack = 21,05.
   Cada peça leva APENAS um número gravado (a tabela número → medida fica no README).
 
+Produção (depois do teste): python3 gerar_projeto.py --producao --tampa 7 --bucha 6 [--qtd-tampas 24 --qtd-buchas 24]
+
 Saídas (pasta --saida):
   <nome>.3mf           projeto completo (perfil da A1 copiado do seu projeto do dachshund)
   <nome>_placa.stl     alternativa: mesma placa em um único STL (qualquer fatiador abre)
@@ -89,6 +91,8 @@ def tampa(d_pino: float, numero: int) -> Manifold:
     topo = h + T_PINO_L + T_PONTA_H
     peca = revolver([(0, 0), (rf - T_CH_R, 0), (rf, T_CH_H), (rf, h), (rp, h),
                      (rp, h + T_PINO_L), (rp - T_PONTA_R, topo), (0, topo)])
+    if not numero:                      # peça de produção: sem número
+        return peca
     # Número gravado na face superior do flange (anel entre o pino e a borda), à frente (−Y).
     # Superfície voltada para cima → imprime limpo, sem ponte (texto na face da mesa gerava aviso de ponte longa).
     return peca - gravura(str(numero), h - TEXTO_PROF, 9.0, 5.0, centro=(0.0, -(rp + rf) / 2))
@@ -131,6 +135,30 @@ def montar_pecas():
                           mesh=para_trimesh(bucha(od, fu, i + 1)),
                           pos=(CENTRO[0] + (c - 1.5) * pb, y_b0 + (1 - r) * pb)))
     return pecas
+
+
+def montar_producao(tn: int, bn: int, n_tampas: int, n_buchas: int, tampas_por_placa: int = 6):
+    """Placas de produção com as peças escolhidas no teste (tn = nº da tampa, bn = nº da bucha).
+    Buchas: 3 × 8 por placa (passo 27, flange 23,4). Tampas: 3 × 2 por placa (passo 40, como no projeto antigo)."""
+    d_pino, od, furo = T_PINOS[tn - 1], B_OD[bn - 1], B_FURO[bn - 1]
+    mb = para_trimesh(bucha(od, furo, 0, B_FLANGE_D))
+    mt = para_trimesh(tampa(d_pino, 0))
+    pecas, placa = [], 0
+    for ini in range(0, n_buchas, 24):
+        placa += 1
+        lote = min(24, n_buchas - ini)
+        linhas = -(-lote // 8)
+        for i in range(lote):
+            r, c = divmod(i, 8)
+            pecas.append(dict(nome=f"BUCHA_B{bn}_{ini + i + 1:02d}", tipo="bucha", mesh=mb, placa=placa, od=od, furo=furo,
+                              pos=(CENTRO[0] + (c - 3.5) * 27, CENTRO[1] + ((linhas - 1) / 2 - r) * 27)))
+    for ini in range(0, n_tampas, tampas_por_placa):
+        placa += 1
+        for j in range(min(tampas_por_placa, n_tampas - ini)):
+            r, c = divmod(j, 3)
+            pecas.append(dict(nome=f"TAMPA_T{tn}_{ini + j + 1:02d}", tipo="tampa", mesh=mt, placa=placa, d_pino=d_pino,
+                              pos=(CENTRO[0] + (c - 1) * 40, CENTRO[1] + (0.5 - r) * 40)))
+    return pecas, dict(d_pino=d_pino, od=od, furo=furo)
 
 
 # ─────────────────────────────────── Miniaturas ──────────────────────────────────────
@@ -191,24 +219,43 @@ def _uuid(chave: str) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_URL, "tampas_haste_aco/" + chave))
 
 
-def escrever_projeto(caminho: Path, pecas, titulo: str):
+STRIDE = 256 * 1.2        # deslocamento entre placas no Bambu Studio (largura da mesa × 1,2)
+
+
+def origem_placa(k: int, n: int):
+    """Origem (x, y) da placa k (0-based) quando o projeto tem n placas — regra do Bambu Studio:
+    colunas = sqrt(n) arredondado para cima; as linhas descem (y negativo)."""
+    v = n ** 0.5
+    r = int(v + 0.5)
+    cols = r + 1 if v > r else r
+    return (k % cols) * STRIDE, -(k // cols) * STRIDE
+
+
+def escrever_projeto(caminho: Path, pecas, titulo: str, nomes_placas=None, descricao: str = ""):
+    import io
+    import json
     with zipfile.ZipFile(BASE_3MF) as z:
         project_settings = z.read("Metadata/project_settings.config")
 
+    n_placas = max(p.get("placa", 1) for p in pecas)
+    nomes_placas = nomes_placas or [""] * n_placas
     ns = ('xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" '
           'xmlns:BambuStudio="http://schemas.bambulab.com/package/2021" '
           'xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06" requiredextensions="p"')
     arqs = {}
-    res, build, cfg_obj, plate_inst, bbox_obj, rels_obj = [], [], [], [], [], []
+    res, build, cfg_obj, rels_obj = [], [], [], []
+    inst_placa = {k: [] for k in range(1, n_placas + 1)}
+    bbox_placa = {k: [] for k in range(1, n_placas + 1)}
     for i, p in enumerate(pecas, 1):
         m = p["mesh"]
+        k = p.get("placa", 1)
+        ox, oy = origem_placa(k - 1, n_placas)
         c = m.bounds.mean(0)                      # Bambu: malha centrada no centro da caixa
         v = m.vertices - c
-        alt = m.bounds[1][2] - m.bounds[0][2]
         top_id, in_id = 2 * i, 2 * i - 1
         px, py = p["pos"]
-        tx, ty, tz = px + c[0], py + c[1], c[2]
-        x = [f'<?xml version="1.0" encoding="UTF-8"?>',
+        tx, ty, tz = ox + px + c[0], oy + py + c[1], c[2]
+        x = ['<?xml version="1.0" encoding="UTF-8"?>',
              f'<model unit="millimeter" xml:lang="en-US" {ns}>',
              ' <metadata name="BambuStudio:3mfVersion">1</metadata>', " <resources>",
              f'  <object id="{in_id}" p:UUID="{i:04x}0000-81cb-4c03-9d28-80fed5dfa1dc" type="model">',
@@ -245,48 +292,49 @@ def escrever_projeto(caminho: Path, pecas, titulo: str):
             f'      <metadata key="source_offset_z" value="{c[2]:.6f}"/>\n'
             f'      <mesh_stat face_count="{nf}" edges_fixed="0" degenerate_facets="0" facets_removed="0" '
             'facets_reversed="0" backwards_edges="0"/>\n    </part>\n  </object>')
-        plate_inst.append(f'    <model_instance>\n      <metadata key="object_id" value="{top_id}"/>\n'
-                          f'      <metadata key="instance_id" value="0"/>\n'
-                          f'      <metadata key="identify_id" value="{100 + i}"/>\n    </model_instance>')
-        lo, hi = m.bounds[0] + (px - 0, py - 0, 0), m.bounds[1] + (px - 0, py - 0, 0)
-        bbox_obj.append({"area": float(m.area / 2), "bbox": [round(lo[0], 3), round(lo[1], 3), round(hi[0], 3), round(hi[1], 3)],
-                         "id": 100 + i, "layer_height": 0.2, "name": p["nome"]})
+        inst_placa[k].append(f'    <model_instance>\n      <metadata key="object_id" value="{top_id}"/>\n'
+                             f'      <metadata key="instance_id" value="0"/>\n'
+                             f'      <metadata key="identify_id" value="{100 + i}"/>\n    </model_instance>')
+        lo, hi = m.bounds[0] + (px, py, 0), m.bounds[1] + (px, py, 0)    # bbox relativo à placa
+        bbox_placa[k].append({"area": float(m.area / 2), "bbox": [round(lo[0], 3), round(lo[1], 3), round(hi[0], 3), round(hi[1], 3)],
+                              "id": 100 + i, "layer_height": 0.2, "name": p["nome"]})
 
-    allx = [b["bbox"] for b in bbox_obj]
-    bbox_all = [min(b[0] for b in allx), min(b[1] for b in allx), max(b[2] for b in allx), max(b[3] for b in allx)]
-    descr = ("Tampas (pino) e buchas para as hastes de aço do rack de filamento - placa de TESTE v2, "
-             f"gerada em {DATA}. Haste real: Ø ext 19,10 / Ø int 16,26. Furo do rack: 21,05.")
     arqs["3D/3dmodel.model"] = "\n".join([
         '<?xml version="1.0" encoding="UTF-8"?>', f'<model unit="millimeter" xml:lang="en-US" {ns}>',
         ' <metadata name="Application">BambuStudio-02.09.01.70</metadata>',
         ' <metadata name="BambuStudio:3mfVersion">1</metadata>', ' <metadata name="Copyright"></metadata>',
-        f' <metadata name="CreationDate">{DATA}</metadata>', f' <metadata name="Description">{descr}</metadata>',
+        f' <metadata name="CreationDate">{DATA}</metadata>', f' <metadata name="Description">{descricao}</metadata>',
         f' <metadata name="ModificationDate">{DATA}</metadata>', f' <metadata name="Title">{titulo}</metadata>',
         " <resources>", *res, " </resources>", f' <build p:UUID="{_uuid("build")}">', *build, " </build>", "</model>"])
     arqs["3D/_rels/3dmodel.model.rels"] = ('<?xml version="1.0" encoding="UTF-8"?>\n<Relationships xmlns="http://schemas.'
                                            'openxmlformats.org/package/2006/relationships">\n' + "\n".join(rels_obj)
                                            + "\n</Relationships>")
-    arqs["Metadata/model_settings.config"] = "\n".join([
-        '<?xml version="1.0" encoding="UTF-8"?>', "<config>", *cfg_obj, "  <plate>",
-        '    <metadata key="plater_id" value="1"/>',
-        '    <metadata key="plater_name" value="TESTE v2 - tampas e buchas"/>',
-        '    <metadata key="locked" value="false"/>',
-        '    <metadata key="filament_map_mode" value="Auto For Flush"/>',
-        '    <metadata key="filament_maps" value="1 1 1 1"/>',
-        '    <metadata key="filament_volume_maps" value="0 0 0 0"/>',
-        '    <metadata key="thumbnail_file" value="Metadata/plate_1.png"/>',
-        '    <metadata key="thumbnail_no_light_file" value="Metadata/plate_no_light_1.png"/>',
-        '    <metadata key="top_file" value="Metadata/top_1.png"/>',
-        '    <metadata key="pick_file" value="Metadata/pick_1.png"/>', *plate_inst, "  </plate>", "</config>"])
-    import json
-    arqs["Metadata/plate_1.json"] = json.dumps({
-        "bbox_all": bbox_all, "bbox_objects": bbox_obj, "bed_type": "textured_plate", "filament_colors": [],
-        "filament_ids": [], "first_extruder": 0, "first_layer_time": 600.0, "is_seq_print": False,
-        "nozzle_diameter": 0.4, "version": 2})
+    placas_xml = []
+    for k in range(1, n_placas + 1):
+        placas_xml += [
+            "  <plate>", f'    <metadata key="plater_id" value="{k}"/>',
+            f'    <metadata key="plater_name" value="{nomes_placas[k - 1]}"/>',
+            '    <metadata key="locked" value="false"/>',
+            '    <metadata key="filament_map_mode" value="Auto For Flush"/>',
+            '    <metadata key="filament_maps" value="1 1 1 1"/>',
+            '    <metadata key="filament_volume_maps" value="0 0 0 0"/>',
+            f'    <metadata key="thumbnail_file" value="Metadata/plate_{k}.png"/>',
+            f'    <metadata key="thumbnail_no_light_file" value="Metadata/plate_no_light_{k}.png"/>',
+            f'    <metadata key="top_file" value="Metadata/top_{k}.png"/>',
+            f'    <metadata key="pick_file" value="Metadata/pick_{k}.png"/>', *inst_placa[k], "  </plate>"]
+        bb = [b["bbox"] for b in bbox_placa[k]]
+        arqs[f"Metadata/plate_{k}.json"] = json.dumps({
+            "bbox_all": [min(b[0] for b in bb), min(b[1] for b in bb), max(b[2] for b in bb), max(b[3] for b in bb)],
+            "bbox_objects": bbox_placa[k], "bed_type": "textured_plate", "filament_colors": [], "filament_ids": [],
+            "first_extruder": 0, "first_layer_time": 600.0, "is_seq_print": False, "nozzle_diameter": 0.4, "version": 2})
+    arqs["Metadata/model_settings.config"] = "\n".join(
+        ['<?xml version="1.0" encoding="UTF-8"?>', "<config>", *cfg_obj, *placas_xml, "</config>"])
     arqs["Metadata/cut_information.xml"] = ('<?xml version="1.0" encoding="utf-8"?>\n<objects>\n' + "\n".join(
         f' <object id="{i}">\n  <cut_id id="0" check_sum="1" connectors_cnt="0"/>\n </object>'
         for i in range(1, len(pecas) + 1)) + "\n</objects>")
-    arqs["Metadata/filament_sequence.json"] = '{"plate_1":{"nozzle_sequence":[],"optimal_assignment":[],"sequence":[]}}'
+    arqs["Metadata/filament_sequence.json"] = json.dumps(
+        {f"plate_{k}": {"nozzle_sequence": [], "optimal_assignment": [], "sequence": []} for k in range(1, n_placas + 1)},
+        separators=(",", ":"))
     arqs["Metadata/slice_info.config"] = ('<?xml version="1.0" encoding="UTF-8"?>\n<config>\n  <header>\n'
                                           '    <header_item key="X-BBL-Client-Type" value="slicer"/>\n'
                                           '    <header_item key="X-BBL-Client-Version" value="02.09.01.70"/>\n'
@@ -305,21 +353,24 @@ def escrever_projeto(caminho: Path, pecas, titulo: str):
                            'cover-thumbnail-middle"/>\n <Relationship Target="/Auxiliaries/.thumbnails/thumbnail_small.png" '
                            'Id="rel-5" Type="http://schemas.bambulab.com/package/2021/cover-thumbnail-small"/>\n</Relationships>')
 
-    # miniaturas
-    import io
+    # miniaturas (uma por placa; a capa do projeto usa a placa 1)
     def png(img):
         b = io.BytesIO(); img.save(b, "PNG"); return b.getvalue()
-    iso = renderizar(pecas, 512, 512, "iso")
-    topo = renderizar(pecas, 512, 512, "top")
-    paleta = [(40 + (37 * k) % 200, 60 + (91 * k) % 180, 80 + (53 * k) % 170) for k in range(len(pecas))]
-    pick = renderizar(pecas, 512, 512, "top", cores=paleta)
-    bin_ = {"Metadata/plate_1.png": png(iso), "Metadata/plate_no_light_1.png": png(iso),
-            "Metadata/top_1.png": png(topo), "Metadata/pick_1.png": png(pick),
-            "Metadata/plate_1_small.png": png(iso.resize((128, 128), Image.LANCZOS)),
-            "Auxiliaries/.thumbnails/thumbnail_3mf.png": png(renderizar(pecas, 215, 240, "iso").convert("RGB")),
-            "Auxiliaries/.thumbnails/thumbnail_middle.png": png(renderizar(pecas, 608, 680, "iso").convert("RGB")),
-            "Auxiliaries/.thumbnails/thumbnail_small.png": png(renderizar(pecas, 168, 188, "iso").convert("RGB"))}
-    iso.save(caminho.with_name(caminho.stem + "_3d.png"))
+    bin_ = {}
+    for k in range(1, n_placas + 1):
+        sub = [p for p in pecas if p.get("placa", 1) == k]
+        iso = renderizar(sub, 512, 512, "iso")
+        paleta = [(40 + (37 * q) % 200, 60 + (91 * q) % 180, 80 + (53 * q) % 170) for q in range(len(sub))]
+        bin_.update({f"Metadata/plate_{k}.png": png(iso), f"Metadata/plate_no_light_{k}.png": png(iso),
+                     f"Metadata/top_{k}.png": png(renderizar(sub, 512, 512, "top")),
+                     f"Metadata/pick_{k}.png": png(renderizar(sub, 512, 512, "top", cores=paleta)),
+                     f"Metadata/plate_{k}_small.png": png(iso.resize((128, 128), Image.LANCZOS))})
+        if k == 1:
+            iso.save(caminho.with_name(caminho.stem + "_3d.png"))
+            capa = sub
+    bin_.update({"Auxiliaries/.thumbnails/thumbnail_3mf.png": png(renderizar(capa, 215, 240, "iso").convert("RGB")),
+                 "Auxiliaries/.thumbnails/thumbnail_middle.png": png(renderizar(capa, 608, 680, "iso").convert("RGB")),
+                 "Auxiliaries/.thumbnails/thumbnail_small.png": png(renderizar(capa, 168, 188, "iso").convert("RGB"))})
 
     with zipfile.ZipFile(caminho, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("[Content_Types].xml", arqs.pop("[Content_Types].xml"))
@@ -409,21 +460,79 @@ def preview(png: Path, pecas):
     plt.close(fig)
 
 
+def preview_producao(png: Path, pecas, esc, tn: int, bn: int):
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    n = max(p["placa"] for p in pecas)
+    cols = min(n, 3)
+    fig, axs = plt.subplots(-(-n // cols), cols, figsize=(5.2 * cols, 5.4 * -(-n // cols) + 1.2), dpi=100, squeeze=False)
+    for ax in axs.ravel():
+        ax.axis("off")
+    for k in range(1, n + 1):
+        ax = axs[(k - 1) // cols][(k - 1) % cols]
+        ax.axis("on")
+        sub = [p for p in pecas if p["placa"] == k]
+        for p in sub:
+            fl = T_FLANGE_D if p["tipo"] == "tampa" else B_FLANGE_D
+            for z, cor, lw in ((1.0 if p["tipo"] == "tampa" else 0.75, "#9aa0a6", 0.9), (6.0 if p["tipo"] == "bucha" else 12.0, "#1a73e8", 1.2)):
+                s_ = p["mesh"].section(plane_origin=[0, 0, z], plane_normal=[0, 0, 1])
+                for seg in s_.discrete:
+                    ax.plot(seg[:, 0] + p["pos"][0], seg[:, 1] + p["pos"][1], color=cor, lw=lw)
+        ax.add_patch(plt.Rectangle((0, 0), 256, 256, fill=False, ec="#34a853", ls="--"))
+        ax.set_xlim(-5, 261); ax.set_ylim(-5, 261); ax.set_aspect("equal")
+        tipo = sub[0]["tipo"]
+        ax.set_title(f"Placa {k} — " + (f"{len(sub)} buchas nº {bn}" if tipo == "bucha" else f"{len(sub)} tampas nº {tn}"), fontsize=10)
+    fig.suptitle(f"PRODUÇÃO — tampa nº {tn} (Ø pino {esc['d_pino']:.2f}) · bucha nº {bn} (corpo Ø {esc['od']:.2f} / furo Ø {esc['furo']:.2f}) · "
+                 f"{sum(p['tipo'] == 'tampa' for p in pecas)} tampas + {sum(p['tipo'] == 'bucha' for p in pecas)} buchas", fontsize=11)
+    fig.tight_layout()
+    fig.savefig(png)
+    plt.close(fig)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--nome", default="TAMPAS_BUCHAS_HASTE_ACO_teste_v2")
+    ap.add_argument("--nome", default=None)
     ap.add_argument("--saida", default=str(AQUI))
     ap.add_argument("--sem-preview", action="store_true")
+    ap.add_argument("--producao", action="store_true", help="gera as placas de produção (precisa de --tampa e --bucha)")
+    ap.add_argument("--tampa", type=int, help="nº da tampa escolhida no teste (1–10)")
+    ap.add_argument("--bucha", type=int, help="nº da bucha escolhida no teste (1–8)")
+    ap.add_argument("--qtd-tampas", type=int, default=24)
+    ap.add_argument("--qtd-buchas", type=int, default=24)
+    ap.add_argument("--tampas-por-placa", type=int, default=6)
     a = ap.parse_args()
     saida = Path(a.saida); saida.mkdir(parents=True, exist_ok=True)
+
+    if a.producao:
+        if not (a.tampa and a.bucha):
+            ap.error("--producao exige --tampa N e --bucha N (números da placa de teste)")
+        nome = a.nome or "TAMPAS_BUCHAS_HASTE_ACO_producao_v1"
+        pecas, esc = montar_producao(a.tampa, a.bucha, a.qtd_tampas, a.qtd_buchas, a.tampas_por_placa)
+        n_pl = max(p["placa"] for p in pecas)
+        nomes = []
+        for k in range(1, n_pl + 1):
+            sub = [p for p in pecas if p["placa"] == k]
+            nomes.append(f"{'BUCHAS' if sub[0]['tipo'] == 'bucha' else 'TAMPAS'} {len(sub)} un.")
+        descr = (f"Producao: tampa no {a.tampa} (pino {esc['d_pino']:.2f}) e bucha no {a.bucha} (corpo {esc['od']:.2f} / furo {esc['furo']:.2f}), "
+                 f"escolhidas no teste v2 de {DATA}. Haste: 19,10 / 16,26.")
+        escrever_projeto(saida / f"{nome}.3mf", pecas, nome, nomes, descr)
+        if not a.sem_preview:
+            preview_producao(saida / f"{nome}_preview.png", pecas, esc, a.tampa, a.bucha)
+        print(f"{len(pecas)} peças em {n_pl} placas → {saida / nome}.3mf")
+        return
+
+    nome = a.nome or "TAMPAS_BUCHAS_HASTE_ACO_teste_v2"
     pecas = montar_pecas()
-    escrever_projeto(saida / f"{a.nome}.3mf", pecas, a.nome)
+    escrever_projeto(saida / f"{nome}.3mf", pecas, nome, ["TESTE v2 - tampas e buchas"],
+                     "Tampas (pino) e buchas para as hastes de aco do rack de filamento - placa de TESTE v2, "
+                     f"gerada em {DATA}. Haste real: 19,10 ext / 16,26 int. Furo do rack: 21,05.")
     # alternativa universal (qualquer fatiador abre): a mesma placa em um STL único
     placa = trimesh.util.concatenate([p["mesh"].copy().apply_translation((*p["pos"], 0)) for p in pecas])
-    placa.export(saida / f"{a.nome}_placa.stl")
+    placa.export(saida / f"{nome}_placa.stl")
     if not a.sem_preview:
-        preview(saida / f"{a.nome}_preview.png", pecas)
-    print(f"{len(pecas)} peças → {saida / a.nome}.3mf")
+        preview(saida / f"{nome}_preview.png", pecas)
+    print(f"{len(pecas)} peças → {saida / nome}.3mf")
 
 
 if __name__ == "__main__":
